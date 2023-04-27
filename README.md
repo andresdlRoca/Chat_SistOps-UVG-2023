@@ -4,7 +4,7 @@
 El objetivo de este proyecto es reforzar los temas de procesos, threads, concurrencia y comunicacion entre procesos para unificar estos y crear una aplicacion de chat en C con el uso de Sockets.  
   
 La aplicacion se encuentra separada en dos partes:  
-- Servidor  
+### Servidor  
 Mantiene una lista de todos los clientes/usuarios conectados al sistema. Solo pudiendo existir un solo servidor durante la ejecucion del sistema de chat. El servidor se podra ejecutar en una maquina Linux que provea la infraestructura necesaria y los clientes se onectaran al servidor mediante la direccion IP de la maquina donde se ejecute el servidor.
 
 El servidor debera de proveer estos servicios:
@@ -15,7 +15,7 @@ El servidor debera de proveer estos servicios:
 - Cambio de estado de usuario
 - Broadcasting y mensajes directos
 
-- Cliente
+### Cliente
 Se conecta y registra con el servidor, por medio del sistema de chat se permite la existencia de uno o mas clientes durante su ejecucion. Posee una pantalla mediante la que se despliegan los mensajes que el usuario ha recibido del servidor, enviados por un usuario remoto; y en la que se permite el ingreso de texto para envio de mensaje a otros usuarios. Cada cliente debe presentar su propia y unica pantalla de chat.
 
 El cliente debera de tener una interfaz con la que el usuario pueda:

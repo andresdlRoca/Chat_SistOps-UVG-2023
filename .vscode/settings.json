@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "chat.pb-c.h": "c",
+        "stdio.h": "c"
+    }
+}

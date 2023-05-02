@@ -10,69 +10,81 @@
 #include <pthread.h>
 //#include <chat.pb-c.h>
 
-#define LENGTH 2048
+#define LENGTH 500
 
 // Global variables
-volatile sig_atomic_t flag = 0;
+int exit_status = 0;
 int sockfd = 0;
 char name[32];
 
-void str_overwrite_stdout() {
-  printf("%s", "> ");
-  fflush(stdout);
+void manage_exit(int sig) {
+    exit_status = 1;
 }
 
-void str_trim_lf (char* arr, int length) {
-  int i;
-  for (i = 0; i < length; i++) { // trim \n
-    if (arr[i] == '\n') {
-      arr[i] = '\0';
-      break;
-    }
-  }
-}
-
-void catch_ctrl_c_and_exit(int sig) {
-    flag = 1;
-}
-
-void send_msg_handler() {
+void sender() {
   char message[LENGTH] = {};
-	char buffer[LENGTH + 32] = {};
+    char buffer[LENGTH + 32] = {};
 
   while(1) {
-  	str_overwrite_stdout();
+    printf("%s", "$ ");
+    fflush(stdout);
     fgets(message, LENGTH, stdin);
-    str_trim_lf(message, LENGTH);
+    trim_newline(message);
 
-    if (strcmp(message, "exit") == 0) {
-			break;
+    if (strcmp(message, "/exit") == 0) {
+        printf("Saliendo...");
+        break;
+    } else if (strcmp(message, "/activo") == 0){
+        printf("Cambiar estado a activo\n");
+    } else if (strcmp(message, "/inactivo") == 0) {
+        printf("Cambiar estado a inactivo\n");
+    } else if (strcmp(message, "/ocupado") == 0) {
+        printf("Cambiar estado a ocupado\n");
+    } else if (strcmp(message, "/list") == 0) {
+        printf("Mostrar lista de usuarios\n");
+		sprintf(buffer, "%s: %s\n", name, message);
+        send(sockfd, buffer, strlen(buffer), 0);
+    } else if (strcmp(message, "/priv") == 0) {
+        printf("Mandar mensaje privado\n");
     } else {
-      sprintf(buffer, "%s: %s\n", name, message);
-      send(sockfd, buffer, strlen(buffer), 0);
+        sprintf(buffer, "%s: %s\n", name, message);
+        send(sockfd, buffer, strlen(buffer), 0);
     }
 
-		bzero(message, LENGTH);
-    bzero(buffer, LENGTH + 32);
+    memset(message, 0, LENGTH);
+    memset(buffer, 0, LENGTH + 32);
   }
-  catch_ctrl_c_and_exit(2);
+  manage_exit(2);
 }
 
-void recv_msg_handler() {
+void receiver() {
 	char message[LENGTH] = {};
-  while (1) {
+	while (1) {
 		int receive = recv(sockfd, message, LENGTH, 0);
-    if (receive > 0) {
-      printf("%s", message);
-      str_overwrite_stdout();
-    } else if (receive == 0) {
-			break;
-    } else {
-			// -1
+		if (receive > 0) {
+			printf("%s", message);
+			printf("%s", "$ ");
+			fflush(stdout);
+		} else if (receive == 0) {
+				break;
+		} else {
+
 		}
 		memset(message, 0, sizeof(message));
-  }
+	}
 }
+
+void trim_newline (char* str) {
+    int i = 0;
+    while (str[i] != '\0') {
+        if (str[i] == '\n') {
+            str[i] = '\0';
+            break;
+        }
+        i++;
+    }
+}
+
 
 int main(int argc, char **argv){
 	if(argc != 2){
@@ -83,11 +95,11 @@ int main(int argc, char **argv){
 	char *ip = "127.0.0.1";
 	int port = atoi(argv[1]);
 
-	signal(SIGINT, catch_ctrl_c_and_exit);
+	signal(SIGINT, manage_exit);
 
 	printf("Cual es tu nombre?: ");
-  fgets(name, 32, stdin);
-  str_trim_lf(name, strlen(name));
+	fgets(name, 32, stdin);
+	trim_newline(name);
 
 
 	if (strlen(name) > 32 || strlen(name) < 2){
@@ -98,14 +110,14 @@ int main(int argc, char **argv){
 	struct sockaddr_in server_addr;
 
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_addr.s_addr = inet_addr(ip);
-  server_addr.sin_port = htons(port);
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_addr.s_addr = inet_addr(ip);
+	server_addr.sin_port = htons(port);
 
 
   // Conectar al server
-  int err = connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr));
-  if (err == -1) {
+	int err = connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr));
+	if (err == -1) {
 		printf("ERROR: conectar al server\n");
 		return EXIT_FAILURE;
 	}
@@ -116,22 +128,22 @@ int main(int argc, char **argv){
 	printf("!--- Bienvenidos a La Cueva ---!\n");
 
 	pthread_t send_msg_thread;
-  if(pthread_create(&send_msg_thread, NULL, (void *) send_msg_handler, NULL) != 0){
+	if(pthread_create(&send_msg_thread, NULL, (void *) sender, NULL) != 0){
 		printf("ERROR: pthread\n");
-    return EXIT_FAILURE;
+		return EXIT_FAILURE;
 	}
 
 	pthread_t recv_msg_thread;
-  if(pthread_create(&recv_msg_thread, NULL, (void *) recv_msg_handler, NULL) != 0){
+	if(pthread_create(&recv_msg_thread, NULL, (void *) receiver, NULL) != 0){
 		printf("ERROR: pthread\n");
 		return EXIT_FAILURE;
 	}
 
 	while (1){
-		if(flag){
+		if(exit_status){
 			printf("\nNos vemos!\n");
 			break;
-    }
+		}
 	}
 
 	close(sockfd);

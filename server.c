@@ -9,11 +9,10 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <signal.h>
-//#include <chat.pb-c.h>
 
 
-#define MAX_CLIENTS 10
-#define BUFFER_SZ 2048
+#define LIMIT_CLIENT 10
+#define MSG_LIMIT 500
 
 static _Atomic unsigned int cli_count = 0;
 static int uid = 10;
@@ -21,29 +20,27 @@ static int uid = 10;
 // Estructura del cliente
 typedef struct{
 	struct sockaddr_in address;
+	char state[16]; // "activo", "ocupado" o "inactivo"
+	char name[32];
 	int sockfd;
 	int uid;
-	char name[32];
-} client_t;
+} client_obj;
 
-client_t *clients[MAX_CLIENTS]; // Array de clientes
+client_obj *clients[LIMIT_CLIENT]; // Array de clientes
 
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-void str_overwrite_stdout() {
-    printf("\r%s", "> ");
-    fflush(stdout);
+void trim_newline (char* str) {
+    int i = 0;
+    while (str[i] != '\0') {
+        if (str[i] == '\n') {
+            str[i] = '\0';
+            break;
+        }
+        i++;
+    }
 }
 
-void str_trim_lf (char* arr, int length) {
-  int i;
-  for (i = 0; i < length; i++) { 
-    if (arr[i] == '\n') {
-      arr[i] = '\0';
-      break;
-    }
-  }
-}
 
 void print_client_addr(struct sockaddr_in addr){
     printf("%d.%d.%d.%d",
@@ -54,10 +51,10 @@ void print_client_addr(struct sockaddr_in addr){
 }
 
 // Registro de usuarios
-void queue_add(client_t *cl){
+void register_user(client_obj *cl){
 	pthread_mutex_lock(&clients_mutex);
 
-	for(int i=0; i < MAX_CLIENTS; ++i){
+	for(int i=0; i < LIMIT_CLIENT; ++i){
 		if(!clients[i]){
 			clients[i] = cl;
 			break;
@@ -68,10 +65,10 @@ void queue_add(client_t *cl){
 }
 
 // Liberacion de usuarios
-void queue_remove(int uid){
+void free_user(int uid){
 	pthread_mutex_lock(&clients_mutex);
 
-	for(int i=0; i < MAX_CLIENTS; ++i){
+	for(int i=0; i < LIMIT_CLIENT; ++i){
 		if(clients[i]){
 			if(clients[i]->uid == uid){
 				clients[i] = NULL;
@@ -87,7 +84,7 @@ void queue_remove(int uid){
 void send_message(char *s, int uid){
 	pthread_mutex_lock(&clients_mutex);
 
-	for(int i=0; i<MAX_CLIENTS; ++i){
+	for(int i=0; i<LIMIT_CLIENT; i++){
 		if(clients[i]){
 			if(clients[i]->uid != uid){
 				if(write(clients[i]->sockfd, s, strlen(s)) < 0){
@@ -101,42 +98,93 @@ void send_message(char *s, int uid){
 	pthread_mutex_unlock(&clients_mutex);
 }
 
+void send_one_message(char *msg, int uid_sender, int uid_receiver){
+	pthread_mutex_lock(&clients_mutex);
+
+	for(int i = 0; i<LIMIT_CLIENT; i++) {
+		if(clients[i]) {
+			if(clients[i]->uid == uid_receiver){
+				if(write(clients[i]->sockfd, msg, strlen(msg)) < 0){
+					perror("Error: Fallo de mensaje privado");
+					break;
+				}
+			}
+		}
+	}
+
+	printf("Hello");
+	pthread_mutex_unlock(&clients_mutex);
+
+}
+
+void list_all_users(int uid) {
+	pthread_mutex_lock(&clients_mutex);
+
+	char list_users[MSG_LIMIT] = {};
+
+	strcat(list_users, "Usuarios|Estado\n");
+
+	for(int i = 0; i<LIMIT_CLIENT; ++i){
+		if(clients[i]) {
+			if(clients[i] -> uid != uid) {
+				strcat(list_users, clients[i] -> name);
+				strcat(list_users, "|");
+				strcat(list_users, clients[i]->state);
+				strcat(list_users, "\n");
+			}
+		}
+	}
+
+	pthread_mutex_unlock(&clients_mutex);
+	send_one_message(list_users, uid, uid);
+}
+
 // Manejo de la comunicacion con el cliente
 void *handle_client(void *arg){
-	char buff_out[BUFFER_SZ];
+	char buff_out[MSG_LIMIT];
 	char name[32];
 	int leave_flag = 0;
 
 	cli_count++;
-	client_t *cli = (client_t *)arg;
+	client_obj *cli = (client_obj *)arg;
 
 	// Name
 	if(recv(cli->sockfd, name, 32, 0) <= 0 || strlen(name) <  2 || strlen(name) >= 32-1){
 		printf("Nombre invalido.\n");
 		leave_flag = 1;
 	} else{
-		strcpy(cli->name, name);
-		sprintf(buff_out, "%s se ha unido!\n", cli->name);
-		printf("%s", buff_out);
-		send_message(buff_out, cli->uid);
+
+		for(int i = 0; i<LIMIT_CLIENT; ++i){
+			if(clients[i]) {
+				if(strcmp(clients[i] -> name, name) == 0) {
+					printf("Usuario ya en uso\n");
+					leave_flag = 1;
+				}
+			}
+		}
+		if (leave_flag == 0) {
+			strcpy(cli->name, name);
+			sprintf(buff_out, "%s se ha unido!\n", cli->name);
+			printf("%s", buff_out);
+			send_message(buff_out, cli->uid);
+		}
 	}
 
-	bzero(buff_out, BUFFER_SZ);
+	bzero(buff_out, MSG_LIMIT);
 
 	while(1){
 		if (leave_flag) {
 			break;
 		}
-
-		int receive = recv(cli->sockfd, buff_out, BUFFER_SZ, 0);
+		int receive = recv(cli->sockfd, buff_out, MSG_LIMIT, 0);
 		if (receive > 0){
-			if(strlen(buff_out) > 0){
 				send_message(buff_out, cli->uid);
-
-				str_trim_lf(buff_out, strlen(buff_out));
+				trim_newline(buff_out);
 				printf("%s -> %s\n", buff_out, cli->name);
-			}
-		} else if (receive == 0 || strcmp(buff_out, "exit") == 0){
+		} else if(strcmp(buff_out, "/list") == 0) {
+			printf("Se mostrara la lista\n");
+			list_all_users(cli->uid);
+		} else if (receive == 0 || strcmp(buff_out, "/exit") == 0){
 			sprintf(buff_out, "%s se ha pirado.\n", cli->name);
 			printf("%s", buff_out);
 			send_message(buff_out, cli->uid);
@@ -146,15 +194,15 @@ void *handle_client(void *arg){
 			leave_flag = 1;
 		}
 
-		bzero(buff_out, BUFFER_SZ);
+		bzero(buff_out, MSG_LIMIT);
 	}
 
-  // Liberar usuario y thread
+  	// Liberar usuario y thread
 	close(cli->sockfd);
-  queue_remove(cli->uid);
-  free(cli);
-  cli_count--;
-  pthread_detach(pthread_self());
+	free_user(cli->uid);
+	free(cli);
+	cli_count--;
+	pthread_detach(pthread_self());
 
 	return NULL;
 }
@@ -169,9 +217,9 @@ int main(int argc, char **argv){
 	int port = atoi(argv[1]);
 	int option = 1;
 	int listenfd = 0, connfd = 0;
-  struct sockaddr_in serv_addr;
-  struct sockaddr_in cli_addr;
-  pthread_t tid;
+	struct sockaddr_in serv_addr;
+	struct sockaddr_in cli_addr;
+	pthread_t tid;
 
   // Settings del socket
   listenfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -203,7 +251,7 @@ int main(int argc, char **argv){
 		connfd = accept(listenfd, (struct sockaddr*)&cli_addr, &clilen);
 
 		//Chequeo de maximo de clientes
-		if((cli_count + 1) == MAX_CLIENTS){
+		if((cli_count + 1) == LIMIT_CLIENT){
 			printf("Capacidad del clientes excedida ");
 			print_client_addr(cli_addr);
 			printf(":%d\n", cli_addr.sin_port);
@@ -212,13 +260,13 @@ int main(int argc, char **argv){
 		}
 
 		// Ajustes del cliente
-		client_t *cli = (client_t *)malloc(sizeof(client_t));
+		client_obj *cli = (client_obj *)malloc(sizeof(client_obj));
 		cli->address = cli_addr;
 		cli->sockfd = connfd;
 		cli->uid = uid++;
 
 		//Añadir cliente a la fila
-		queue_add(cli);
+		register_user(cli);
 		pthread_create(&tid, NULL, &handle_client, (void*)cli);
 
 		// Optimizacion para que Linux no pete.

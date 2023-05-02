@@ -13,7 +13,7 @@
 
 
 #define MAX_CLIENTS 10
-#define BUFFER_IO 2048
+#define BUFFER_SZ 2048
 
 static _Atomic unsigned int cli_count = 0;
 static int uid = 10;
@@ -23,15 +23,27 @@ typedef struct{
 	struct sockaddr_in address;
 	int sockfd;
 	int uid;
-    char ip[16];
-    char state[15]; // "Activo" o "Ocupado"
 	char name[32];
-} client_obj;
+} client_t;
 
-pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER; // Inicializacion de los hilos mutex para los clientes
+client_t *clients[MAX_CLIENTS]; // Array de clientes
 
-client_obj *clients[MAX_CLIENTS]; // Array de clientes
+pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+void str_overwrite_stdout() {
+    printf("\r%s", "> ");
+    fflush(stdout);
+}
+
+void str_trim_lf (char* arr, int length) {
+  int i;
+  for (i = 0; i < length; i++) { 
+    if (arr[i] == '\n') {
+      arr[i] = '\0';
+      break;
+    }
+  }
+}
 
 void print_client_addr(struct sockaddr_in addr){
     printf("%d.%d.%d.%d",
@@ -42,7 +54,7 @@ void print_client_addr(struct sockaddr_in addr){
 }
 
 // Registro de usuarios
-void register_user(client_obj *cl){
+void queue_add(client_t *cl){
 	pthread_mutex_lock(&clients_mutex);
 
 	for(int i=0; i < MAX_CLIENTS; ++i){
@@ -56,7 +68,7 @@ void register_user(client_obj *cl){
 }
 
 // Liberacion de usuarios
-void free_user(int uid){
+void queue_remove(int uid){
 	pthread_mutex_lock(&clients_mutex);
 
 	for(int i=0; i < MAX_CLIENTS; ++i){
@@ -89,23 +101,14 @@ void send_message(char *s, int uid){
 	pthread_mutex_unlock(&clients_mutex);
 }
 
-void trim_string (char* arr, int length) {
-  for (int i = 0; i < length; i++) {
-    if (arr[i] == '\n') {
-      arr[i] = '\0';
-      break;
-    }
-  }
-}
-
 // Manejo de la comunicacion con el cliente
 void *handle_client(void *arg){
-	char buff_out[BUFFER_IO];
+	char buff_out[BUFFER_SZ];
 	char name[32];
 	int leave_flag = 0;
 
 	cli_count++;
-	client_obj *cli = (client_obj *)arg;
+	client_t *cli = (client_t *)arg;
 
 	// Name
 	if(recv(cli->sockfd, name, 32, 0) <= 0 || strlen(name) <  2 || strlen(name) >= 32-1){
@@ -118,19 +121,19 @@ void *handle_client(void *arg){
 		send_message(buff_out, cli->uid);
 	}
 
-	bzero(buff_out, BUFFER_IO);
+	bzero(buff_out, BUFFER_SZ);
 
 	while(1){
 		if (leave_flag) {
 			break;
 		}
 
-		int receive = recv(cli->sockfd, buff_out, BUFFER_IO, 0);
+		int receive = recv(cli->sockfd, buff_out, BUFFER_SZ, 0);
 		if (receive > 0){
 			if(strlen(buff_out) > 0){
 				send_message(buff_out, cli->uid);
 
-				trim_string(buff_out, strlen(buff_out));
+				str_trim_lf(buff_out, strlen(buff_out));
 				printf("%s -> %s\n", buff_out, cli->name);
 			}
 		} else if (receive == 0 || strcmp(buff_out, "exit") == 0){
@@ -143,12 +146,12 @@ void *handle_client(void *arg){
 			leave_flag = 1;
 		}
 
-		bzero(buff_out, BUFFER_IO);
+		bzero(buff_out, BUFFER_SZ);
 	}
 
   // Liberar usuario y thread
 	close(cli->sockfd);
-  free_user(cli->uid);
+  queue_remove(cli->uid);
   free(cli);
   cli_count--;
   pthread_detach(pthread_self());
@@ -166,9 +169,9 @@ int main(int argc, char **argv){
 	int port = atoi(argv[1]);
 	int option = 1;
 	int listenfd = 0, connfd = 0;
-    struct sockaddr_in serv_addr;
-    struct sockaddr_in cli_addr;
-    pthread_t tid;
+  struct sockaddr_in serv_addr;
+  struct sockaddr_in cli_addr;
+  pthread_t tid;
 
   // Settings del socket
   listenfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -180,18 +183,18 @@ int main(int argc, char **argv){
 
 	if(setsockopt(listenfd, SOL_SOCKET,(SO_REUSEPORT | SO_REUSEADDR),(char*)&option,sizeof(option)) < 0){
 		perror("ERROR: setsockopt fallido");
-        return EXIT_FAILURE;
-    }
+    return EXIT_FAILURE;
+	}
 
-    if(bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-        perror("ERROR: Bindeo del socket fallido");
-        return EXIT_FAILURE;
-    }
+  if(bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+    perror("ERROR: Bindeo del socket fallido");
+    return EXIT_FAILURE;
+  }
 
-    if (listen(listenfd, 10) < 0) {
-        perror("ERROR: Fallo al escuchar al socket");
-        return EXIT_FAILURE;
-    }
+  if (listen(listenfd, 10) < 0) {
+    perror("ERROR: Fallo al escuchar al socket");
+    return EXIT_FAILURE;
+	}
 
 	printf("!--- Bienvenidos a La Cueva ---!\n");
 
@@ -209,13 +212,13 @@ int main(int argc, char **argv){
 		}
 
 		// Ajustes del cliente
-		client_obj *cli = (client_obj *)malloc(sizeof(client_obj));
+		client_t *cli = (client_t *)malloc(sizeof(client_t));
 		cli->address = cli_addr;
 		cli->sockfd = connfd;
 		cli->uid = uid++;
 
 		//Añadir cliente a la fila
-		register_user(cli);
+		queue_add(cli);
 		pthread_create(&tid, NULL, &handle_client, (void*)cli);
 
 		// Optimizacion para que Linux no pete.

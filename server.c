@@ -13,7 +13,7 @@
 
 
 #define MAX_CLIENTS 10
-#define BUFFER_SZ 2048
+#define BUFFER_IO 2048
 
 static _Atomic unsigned int cli_count = 0;
 static int uid = 10;
@@ -26,11 +26,12 @@ typedef struct{
     char ip[16];
     char state[15]; // "Activo" o "Ocupado"
 	char name[32];
-} client_t;
+} client_obj;
 
-client_t *clients[MAX_CLIENTS]; // Array de clientes
+pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER; // Inicializacion de los hilos mutex para los clientes
 
-pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+client_obj *clients[MAX_CLIENTS]; // Array de clientes
+
 
 void print_client_addr(struct sockaddr_in addr){
     printf("%d.%d.%d.%d",
@@ -41,7 +42,7 @@ void print_client_addr(struct sockaddr_in addr){
 }
 
 // Registro de usuarios
-void queue_add(client_t *cl){
+void register_user(client_obj *cl){
 	pthread_mutex_lock(&clients_mutex);
 
 	for(int i=0; i < MAX_CLIENTS; ++i){
@@ -55,7 +56,7 @@ void queue_add(client_t *cl){
 }
 
 // Liberacion de usuarios
-void queue_remove(int uid){
+void free_user(int uid){
 	pthread_mutex_lock(&clients_mutex);
 
 	for(int i=0; i < MAX_CLIENTS; ++i){
@@ -88,9 +89,8 @@ void send_message(char *s, int uid){
 	pthread_mutex_unlock(&clients_mutex);
 }
 
-void str_trim_lf (char* arr, int length) {
-  int i;
-  for (i = 0; i < length; i++) { 
+void trim_string (char* arr, int length) {
+  for (int i = 0; i < length; i++) {
     if (arr[i] == '\n') {
       arr[i] = '\0';
       break;
@@ -100,12 +100,12 @@ void str_trim_lf (char* arr, int length) {
 
 // Manejo de la comunicacion con el cliente
 void *handle_client(void *arg){
-	char buff_out[BUFFER_SZ];
+	char buff_out[BUFFER_IO];
 	char name[32];
 	int leave_flag = 0;
 
 	cli_count++;
-	client_t *cli = (client_t *)arg;
+	client_obj *cli = (client_obj *)arg;
 
 	// Name
 	if(recv(cli->sockfd, name, 32, 0) <= 0 || strlen(name) <  2 || strlen(name) >= 32-1){
@@ -118,19 +118,19 @@ void *handle_client(void *arg){
 		send_message(buff_out, cli->uid);
 	}
 
-	bzero(buff_out, BUFFER_SZ);
+	bzero(buff_out, BUFFER_IO);
 
 	while(1){
 		if (leave_flag) {
 			break;
 		}
 
-		int receive = recv(cli->sockfd, buff_out, BUFFER_SZ, 0);
+		int receive = recv(cli->sockfd, buff_out, BUFFER_IO, 0);
 		if (receive > 0){
 			if(strlen(buff_out) > 0){
 				send_message(buff_out, cli->uid);
 
-				str_trim_lf(buff_out, strlen(buff_out));
+				trim_string(buff_out, strlen(buff_out));
 				printf("%s -> %s\n", buff_out, cli->name);
 			}
 		} else if (receive == 0 || strcmp(buff_out, "exit") == 0){
@@ -143,12 +143,12 @@ void *handle_client(void *arg){
 			leave_flag = 1;
 		}
 
-		bzero(buff_out, BUFFER_SZ);
+		bzero(buff_out, BUFFER_IO);
 	}
 
   // Liberar usuario y thread
 	close(cli->sockfd);
-  queue_remove(cli->uid);
+  free_user(cli->uid);
   free(cli);
   cli_count--;
   pthread_detach(pthread_self());
@@ -209,13 +209,13 @@ int main(int argc, char **argv){
 		}
 
 		// Ajustes del cliente
-		client_t *cli = (client_t *)malloc(sizeof(client_t));
+		client_obj *cli = (client_obj *)malloc(sizeof(client_obj));
 		cli->address = cli_addr;
 		cli->sockfd = connfd;
 		cli->uid = uid++;
 
 		//Añadir cliente a la fila
-		queue_add(cli);
+		register_user(cli);
 		pthread_create(&tid, NULL, &handle_client, (void*)cli);
 
 		// Optimizacion para que Linux no pete.

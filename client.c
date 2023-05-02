@@ -13,10 +13,11 @@
 #define LENGTH 2048
 #define MAX_NAME_LENGTH 32
 
+
 // Global variables
+char name[MAX_NAME_LENGTH];
 int exit_status = 0;
 int sockfd = 0;
-char name[MAX_NAME_LENGTH];
 
 void manage_exit(int sig) {
     exit_status = 1;
@@ -45,8 +46,8 @@ void sender() {
 			send(sockfd, buffer, strlen(buffer), 0);
 		}
 
-		bzero(message, LENGTH);
-		bzero(buffer, LENGTH + MAX_NAME_LENGTH);
+		memset(message, 0, LENGTH);
+		memset(buffer, 0, LENGTH + MAX_NAME_LENGTH);
 	}
 	manage_exit(2);
 }
@@ -71,8 +72,7 @@ void receiver() {
 }
 
 void trim_string (char* arr, int length) {
-  int i;
-  for (i = 0; i < length; i++) {
+  for (int i = 0; i < length; i++) {
     if (arr[i] == '\n') {
       arr[i] = '\0';
       break;
@@ -103,20 +103,29 @@ int main(int argc, char **argv){
 	struct sockaddr_in server_addr;
 
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if(sockfd == -1) {
+		printf("ERROR: socket\n");
+		return EXIT_FAILURE;
+	}
+
+
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_addr.s_addr = inet_addr(ip);
 	server_addr.sin_port = htons(port);
 
 
   // Conectar al server
-  int err = connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr));
-  if (err == -1) {
+  	if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
 		printf("ERROR: conectar al server\n");
 		return EXIT_FAILURE;
 	}
 
-	// Send name
-	send(sockfd, name, MAX_NAME_LENGTH, 0);
+	// Enviar nombre
+	if(send(sockfd, name, MAX_NAME_LENGTH+1, 0) == -1) {
+		printf("ERROR: send\n");
+		close(sockfd);
+		return EXIT_FAILURE;
+	}
 
 	printf("!--- Bienvenidos a La Cueva ---!\n");
 
@@ -133,6 +142,7 @@ int main(int argc, char **argv){
 	}
 
 	while (1){
+		sleep(1);
 		if(exit_status){
 			printf("\nNos vemos!\n");
 			break;

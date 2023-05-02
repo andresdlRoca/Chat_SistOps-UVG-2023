@@ -181,9 +181,12 @@ void *handle_client(void *arg){
 				send_message(buff_out, cli->uid);
 				trim_newline(buff_out);
 				printf("%s -> %s\n", buff_out, cli->name);
-		} else if(strcmp(buff_out, "/list") == 0) {
-			printf("Se mostrara la lista\n");
-			list_all_users(cli->uid);
+				printf(buff_out);
+	
+				if (strstr(buff_out, "/list") == 1){
+					printf("Se mostrara la lista\n");
+					list_all_users(cli->uid);
+				}
 		} else if (receive == 0 || strcmp(buff_out, "/exit") == 0){
 			sprintf(buff_out, "%s se ha pirado.\n", cli->name);
 			printf("%s", buff_out);

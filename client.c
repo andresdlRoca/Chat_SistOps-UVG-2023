@@ -44,8 +44,10 @@ void sender() {
         printf("Mostrar lista de usuarios\n");
 		sprintf(buffer, "%s: %s\n", name, message);
         send(sockfd, buffer, strlen(buffer), 0);
-    } else if (strcmp(message, "/priv") == 0) {
+    } else if (strstr(message, "/priv")) { // /priv <to> <message>
         printf("Mandar mensaje privado\n");
+		send(sockfd, message, strlen(message), 0);
+		
     } else {
         sprintf(buffer, "%s: %s\n", name, message);
         send(sockfd, buffer, strlen(buffer), 0);

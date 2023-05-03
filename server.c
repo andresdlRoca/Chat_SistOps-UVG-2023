@@ -114,6 +114,25 @@ void send_one_message(char *msg, int uid_sender, int uid_receiver){
 
 	// printf("Hello");
 	pthread_mutex_unlock(&clients_mutex);
+}
+
+
+void send_private_msg(char *msg, char *receiver_name) {
+	pthread_mutex_lock(&clients_mutex);
+	
+
+	for(int i = 0; i<LIMIT_CLIENT; i++){
+		if(clients[i]){
+			if(strcmp(clients[i]->name, receiver_name) == 0){
+				if(write(clients[i]->sockfd, msg, strlen(msg))<0){
+					perror("Error: Fallo de mensaje privado generado por user");
+					break;
+				}
+			}
+		}
+	}
+
+	pthread_mutex_unlock(&clients_mutex);
 
 }
 
@@ -122,7 +141,7 @@ void list_all_users(int uid) {
 
 	char list_users[MSG_LIMIT] = {};
 
-	strcat(list_users, "Usuarios|Estado\n");
+	strcat(list_users, "\nUsuarios|Estado\n");
 
 	char buffer_state[12];
 
@@ -132,7 +151,14 @@ void list_all_users(int uid) {
 				strcat(list_users, clients[i] -> name);
 				strcat(list_users, "|");
 				sprintf(buffer_state, "%d", clients[i]->state);
-				strcat(list_users, buffer_state);
+				if (strcmp(buffer_state, "0") == 0){//activo
+					strcat(list_users, "activo");
+				} else if (strcmp(buffer_state, "1") == 0){ //ocupado
+					strcat(list_users, "ocupado");
+				} else if (strcmp(buffer_state, "2") == 0) { //inactivo
+					strcat(list_users, "inactivo");
+				}
+				// strcat(list_users, buffer_state);
 				strcat(list_users, "\n");
 			}
 		}
@@ -181,15 +207,55 @@ void *handle_client(void *arg){
 		}
 		int receive = recv(cli->sockfd, buff_out, MSG_LIMIT, 0);
 		if (receive > 0){
-				send_message(buff_out, cli->uid);
-				trim_newline(buff_out);
-				printf("%s -> %s\n", buff_out, cli->name);
-				printf(buff_out);
-	
-				if (strstr(buff_out, "/list")){
-					printf("Se mostrara la lista\n");
+				if (strstr(buff_out, "/list")){ // Comando de list recibido
+					printf("\nSe mostrara la lista\n");
 					list_all_users(cli->uid);
+				} else if (strstr(buff_out, "/priv")){ //Comando de mensaje privado
+					printf("\nSe enviara un mensaje privado\n");
+					char buffer_string[MSG_LIMIT + 32];					
+
+					char *token = strtok(buff_out, " ");
+					while (token != NULL){
+						if (strcmp(token, "/priv") !=0) {
+							strcat(buffer_string, token);
+							strcat(buffer_string, " ");
+						}
+						token = strtok(NULL , " ");
+					}
+					strcat(buffer_string, ". De: ");
+					strcat(buffer_string, cli->name);
+					strcat(buffer_string, " \n");
+					trim_newline(buffer_string);
+
+					char *space_pos = strchr(buffer_string, ' ');
+					char *receiver = "";
+					char *message_buffer = "";
+
+
+					if(space_pos != NULL) {
+						*space_pos = '\0';
+						receiver = buffer_string;
+						message_buffer = space_pos + 1;
+					}
+
+					printf("destinatario: %s\n", receiver);
+					printf("mensaje: %s\n", message_buffer);
+					strcat(message_buffer, "\n");
+
+					send_private_msg(message_buffer, receiver);
+
+
+					//clearing buffer_string
+					memset(buffer_string, '\0', sizeof(buffer_string));
+
+
+				} else { //Mensaje publico
+					send_message(buff_out, cli->uid);
+					trim_newline(buff_out);
+					printf("%s -> %s\n", buff_out, cli->name);
+					printf(buff_out);
 				}
+
 		} else if (receive == 0 || strcmp(buff_out, "/exit") == 0){
 			sprintf(buff_out, "%s se ha pirado.\n", cli->name);
 			printf("%s", buff_out);

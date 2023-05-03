@@ -168,6 +168,47 @@ void list_all_users(int uid) {
 	send_one_message(list_users, uid, uid);
 }
 
+void info_user(char *receiver, int uid){
+	pthread_mutex_lock(&clients_mutex);
+
+	char list_users[MSG_LIMIT] = {};
+
+	strcat(list_users, "\nUsuarios|Estado|Uid|Sockfd\n");
+
+	char buffer_state[12];
+
+	for(int i = 0; i<LIMIT_CLIENT; ++i){
+		if(clients[i]) {
+			if(strcmp(clients[i] -> name, receiver) == 0) {
+				strcat(list_users, clients[i] -> name);
+				strcat(list_users, "|");
+				sprintf(buffer_state, "%d", clients[i]->state);
+				if (strcmp(buffer_state, "0") == 0){//activo
+					strcat(list_users, "activo");
+				} else if (strcmp(buffer_state, "1") == 0){ //ocupado
+					strcat(list_users, "ocupado");
+				} else if (strcmp(buffer_state, "2") == 0) { //inactivo
+					strcat(list_users, "inactivo");
+				}
+
+				char temp_uid[10];
+				char temp_sockfd[10];
+				strcat(list_users, "|");
+				sprintf(temp_uid, "%d", clients[i]->uid);
+				strcat(list_users, temp_uid);
+				strcat(list_users, "|");
+				sprintf(temp_sockfd, "%d", clients[i]->sockfd);
+				strcat(list_users, temp_sockfd);
+
+				strcat(list_users, "\n");
+			}
+		}
+	}
+
+	pthread_mutex_unlock(&clients_mutex);
+	send_one_message(list_users, uid, uid);
+}
+
 // Manejo de la comunicacion con el cliente
 void *handle_client(void *arg){
 	char buff_out[MSG_LIMIT];
@@ -249,12 +290,55 @@ void *handle_client(void *arg){
 					memset(buffer_string, '\0', sizeof(buffer_string));
 
 
+				} else if (strstr(buff_out, "/activo")){ //Comando de mensaje activo
+					printf("\nSe cambia a activo\n");
+					cli->state=0;
+				
+				} else if (strstr(buff_out, "/ocupado")){ //Comando de mensaje ocupado
+					printf("\nSe cambia a ocupado\n");
+					cli->state=1;
+				
+				} else if (strstr(buff_out, "/inactivo")){ //Comando de mensaje inactivo
+					printf("\nSe cambia a inactivo\n");
+					cli->state=2;
+				
+				} else if (strstr(buff_out, "/info")){ //Comando de mensaje info
+					printf("\nSe busca info de usuario\n");
+					char buffer_string[MSG_LIMIT + 32];					
+
+					char *token = strtok(buff_out, " ");
+					while (token != NULL){
+						if (strcmp(token, "/info") !=0) {
+							strcat(buffer_string, token);
+							strcat(buffer_string, " ");
+						}
+						token = strtok(NULL , " ");
+					}
+
+					trim_newline(buffer_string);
+					char *space_pos = strchr(buffer_string, ' ');
+					char *receiver = "";
+					char *message_buffer = "";
+
+
+					if(space_pos != NULL) {
+						*space_pos = '\0';
+						receiver = buffer_string;
+						message_buffer = space_pos + 1;
+					}
+
+					info_user(receiver, cli->uid);
+
+					memset(buffer_string, '\0', sizeof(buffer_string));
+					
+					
+				
 				} else { //Mensaje publico
 					send_message(buff_out, cli->uid);
 					trim_newline(buff_out);
 					printf("%s -> %s\n", buff_out, cli->name);
 					printf(buff_out);
-				}
+				} 
 
 		} else if (receive == 0 || strcmp(buff_out, "/exit") == 0){
 			sprintf(buff_out, "%s se ha pirado.\n", cli->name);

@@ -36,10 +36,13 @@ void sender() {
         break;
     } else if (strcmp(message, "/activo") == 0){
         printf("Cambiar estado a activo\n");
+		send(sockfd, message, strlen(message), 0);
     } else if (strcmp(message, "/inactivo") == 0) {
         printf("Cambiar estado a inactivo\n");
+		send(sockfd, message, strlen(message), 0);
     } else if (strcmp(message, "/ocupado") == 0) {
         printf("Cambiar estado a ocupado\n");
+		send(sockfd, message, strlen(message), 0);
     } else if (strcmp(message, "/list") == 0) {
         printf("Mostrar lista de usuarios\n");
 		sprintf(buffer, "%s: %s\n", name, message);
@@ -47,8 +50,11 @@ void sender() {
     } else if (strstr(message, "/priv")) { // /priv <to> <message>
         printf("Mandar mensaje privado\n");
 		send(sockfd, message, strlen(message), 0);
-		
-    } else {
+    }else if (strstr(message, "/info")) { // /info <user>
+        printf("Buscar informacion de usuario\n");
+		send(sockfd, message, strlen(message), 0); 
+	
+	}else {
         sprintf(buffer, "%s: %s\n", name, message);
         send(sockfd, buffer, strlen(buffer), 0);
     }

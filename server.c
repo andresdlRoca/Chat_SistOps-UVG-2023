@@ -11,8 +11,8 @@
 #include <signal.h>
 
 
-#define LIMIT_CLIENT 10
-#define MSG_LIMIT 500
+#define LIMIT_CLIENT 100
+#define MSG_LIMIT 3000
 
 static _Atomic unsigned int cli_count = 0;
 static int uid = 10;
@@ -26,7 +26,7 @@ typedef struct{
 	int uid;
 } client_obj;
 
-client_obj *clients[LIMIT_CLIENT]; // Array de clientes
+client_obj *clients[LIMIT_CLIENT+1]; // Array de clientes
 
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -124,12 +124,15 @@ void list_all_users(int uid) {
 
 	strcat(list_users, "Usuarios|Estado\n");
 
+	char buffer_state[12];
+
 	for(int i = 0; i<LIMIT_CLIENT; ++i){
 		if(clients[i]) {
 			if(clients[i] -> uid != uid) {
 				strcat(list_users, clients[i] -> name);
 				strcat(list_users, "|");
-				strcat(list_users, clients[i]->state);
+				sprintf(buffer_state, "%d", clients[i]->state);
+				strcat(list_users, buffer_state);
 				strcat(list_users, "\n");
 			}
 		}
@@ -267,6 +270,7 @@ int main(int argc, char **argv){
 		cli->address = cli_addr;
 		cli->sockfd = connfd;
 		cli->uid = uid++;
+		cli->state = 0;
 
 		//Añadir cliente a la fila
 		register_user(cli);

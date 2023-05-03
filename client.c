@@ -10,7 +10,7 @@
 #include <pthread.h>
 //#include <chat.pb-c.h>
 
-#define LENGTH 500
+#define LENGTH 3000
 
 // Global variables
 int exit_status = 0;

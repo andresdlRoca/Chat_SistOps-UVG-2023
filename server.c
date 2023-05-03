@@ -20,7 +20,7 @@ static int uid = 10;
 // Estructura del cliente
 typedef struct{
 	struct sockaddr_in address;
-	char state[16]; // "activo", "ocupado" o "inactivo"
+	int state; // 0="activo", 1="ocupado" o 2="inactivo"
 	char name[32];
 	int sockfd;
 	int uid;
@@ -112,7 +112,7 @@ void send_one_message(char *msg, int uid_sender, int uid_receiver){
 		}
 	}
 
-	printf("Hello");
+	// printf("Hello");
 	pthread_mutex_unlock(&clients_mutex);
 
 }
@@ -183,7 +183,7 @@ void *handle_client(void *arg){
 				printf("%s -> %s\n", buff_out, cli->name);
 				printf(buff_out);
 	
-				if (strstr(buff_out, "/list") == 1){
+				if (strstr(buff_out, "/list")){
 					printf("Se mostrara la lista\n");
 					list_all_users(cli->uid);
 				}
